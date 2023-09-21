@@ -24,7 +24,7 @@ def get_args():
     parser.add_argument("--hid_drop", type=float, default=0.333)
     parser.add_argument("--pooling_method", type=str, default="avg", choices=["sum", "avg", "max"])
     parser.add_argument("--grad_clip", type=float, default=5.0)
-    parser.add_argument("--max_train_epoch", type=int, default=5)
+    parser.add_argument("--max_train_epoch", type=int, default=20)
     parser.add_argument("--batch_size", type=int, default=16)
     parser.add_argument("--lrate", type=float, default=0.005)
     parser.add_argument("--lrate_decay", type=float, default=0)  # 0 means no decay!

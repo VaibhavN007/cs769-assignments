@@ -40,8 +40,15 @@ def load_embedding(vocab, emb_file, emb_size):
     Return:
         emb: (np.array), embedding matrix of size (|vocab|, emb_size) 
     """
-    raise NotImplementedError()
-
+    words = vocab.word2id.keys()
+    embedding_matrix = {}
+    with open(emb_file, 'r') as f:
+        for line in f:
+            split_line = line.split()
+            word = split_line[0]
+            vector = np.asarray(split_line[1:], dtype='float32')
+            embedding_matrix[word] = vector
+    return embedding_matrix
 
 class DanModel(BaseModel):
     def __init__(self, args, vocab, tag_size):
@@ -55,12 +62,12 @@ class DanModel(BaseModel):
 
         self.define_model_parameters()
         self.init_model_parameters()
+        self.copy_embedding_from_numpy()
 
         # Use pre-trained word embeddings if emb_file exists
-        if args.emb_file is not None:
-            self.copy_embedding_from_numpy()
-        else:
-            self.init_embedding_matrix()
+        if self.embedding_matrix is not None:
+            self.embedding.weight.data.copy_(torch.from_numpy(self.embedding_matrix).float())
+            self.embedding.weight.requires_grad = True
 
     def define_model_parameters(self):
         """
@@ -93,9 +100,6 @@ class DanModel(BaseModel):
         Load pre-trained word embeddings from numpy.array to nn.embedding
         Pass hyperparameters explicitly or use self.args to access the hyperparameters.
         """
-        raise NotImplementedError()
-    
-    def init_embedding_matrix(self):
         self.embedding_matrix = np.copy(self.embedding.weight.data.numpy())
         embeddings_index = {}
         for i, word in self.vocab.id2word.items():
