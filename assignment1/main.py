@@ -69,6 +69,11 @@ def data_iter(data, batch_size, shuffle=True):
         tags = [data[i * batch_size + b][1] for b in range(cur_batch_size)]
         yield sents, tags
 
+class AugSent:
+    def __init__(self, sents, masks) -> None:
+        self.sents = sents
+        self.masks = masks
+        
 def pad_sentences(sents, pad_id):
     """
     Adding pad_id to sentences in a mini-batch to ensure that 
@@ -79,7 +84,13 @@ def pad_sentences(sents, pad_id):
     Return:
         aug_sents: list(list(int)), |s_1| == |s_i|, for s_i in sents
     """
-    raise NotImplementedError()
+    pad_len = len(max(sents, key = lambda x : len(x)))
+    aug_sents = []
+    masks = []
+    for sent in sents:
+        masks.append([1 for _ in range(len(sent))] + [0 for _ in range(pad_len - len(sent))])
+        aug_sents.append(sent + [pad_id for _ in range(pad_len - len(sent))])
+    return AugSent(aug_sents, masks)
 
 def compute_grad_norm(model, norm_type=2):
     """
@@ -104,7 +115,7 @@ def compute_param_norm(model, norm_type=2):
         total_norm += p_norm
     return total_norm ** (1. / norm_type)
 
-def evaluate(dataset, model, device, tag_vocab=None, filename=None):
+def evaluate(dataset, model, device, tag_vocab=None, filename=None, vocab=None):
     """
     Evaluate test/dev set
     """
@@ -112,7 +123,9 @@ def evaluate(dataset, model, device, tag_vocab=None, filename=None):
     predicts = []
     acc = 0
     for words, tag in dataset:
-        X = torch.LongTensor([words]).to(device)
+        X = pad_sentences([words], vocab['<pad>'])
+        X.sents = torch.LongTensor(X.sents).to(device)
+        X.masks = torch.FloatTensor(X.masks).to(device)
         scores = model(X)
         y_pred = scores.argmax(1)[0].item()
         predicts.append(y_pred)
@@ -167,7 +180,8 @@ def main():
             train_iter += 1
 
             X = pad_sentences(batch[0], word_vocab['<pad>'])
-            X = torch.LongTensor(X).to(device)
+            X.sents = torch.LongTensor(X.sents).to(device)
+            X.masks = torch.FloatTensor(X.masks).to(device)
             Y = torch.LongTensor(batch[1]).to(device)
             # Forward pass: compute the unnormalized scores for P(Y|X)
             scores = model(X)
@@ -197,7 +211,7 @@ def main():
 
             if train_iter % args.eval_niter == 0:
                 print(f'Evaluate dev data:')
-                dev_accuracy = evaluate(dev_data, model, device) 
+                dev_accuracy = evaluate(dev_data, model, device, vocab=word_vocab) 
                 if dev_accuracy > best_records[1]:
                     print(f'  -Update best model at {train_iter}, dev accuracy={dev_accuracy:.4f}')
                     best_records = (train_iter, dev_accuracy)
@@ -205,8 +219,8 @@ def main():
 
     # Load the best model
     model.load(args.model)
-    evaluate(test_data, model, device, tag_vocab, filename=args.test_output)
-    evaluate(dev_data, model, device, tag_vocab, filename=args.dev_output)
+    evaluate(test_data, model, device, tag_vocab, filename=args.test_output, vocab=word_vocab)
+    evaluate(dev_data, model, device, tag_vocab, filename=args.dev_output, vocab=word_vocab)
 
 
 if __name__ == '__main__':

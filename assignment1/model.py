@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import zipfile
 import numpy as np
 
@@ -45,26 +46,47 @@ def load_embedding(vocab, emb_file, emb_size):
 class DanModel(BaseModel):
     def __init__(self, args, vocab, tag_size):
         super(DanModel, self).__init__(args, vocab, tag_size)
+
+        self.n_embed = len(self.vocab)
+        self.d_embed = self.args.emb_size
+        self.dropout = 0.3
+        self.d_hidden = self.d_embed
+        self.d_out = self.tag_size
+
         self.define_model_parameters()
         self.init_model_parameters()
 
         # Use pre-trained word embeddings if emb_file exists
         if args.emb_file is not None:
             self.copy_embedding_from_numpy()
+        else:
+            self.init_embedding_matrix()
 
     def define_model_parameters(self):
         """
         Define the model's parameters, e.g., embedding layer, feedforward layer.
         Pass hyperparameters explicitly or use self.args to access the hyperparameters.
         """
-        raise NotImplementedError()
+        self.embedding = nn.Embedding(self.n_embed, self.d_embed)
+        self.fc1 = nn.Linear(self.d_embed, self.d_hidden)
+        self.bn1 = nn.BatchNorm1d(self.d_embed)
+        self.fc2 = nn.Linear(self.d_hidden, self.d_hidden//2)
+        self.bn2 = nn.BatchNorm1d(self.d_hidden//2)
+        self.fc3 = nn.Linear(self.d_hidden//2, self.d_out)
+        self.drop = nn.Dropout(self.dropout)
 
     def init_model_parameters(self):
         """
         Initialize the model's parameters by uniform sampling from a range [-v, v], e.g., v=0.08
         Pass hyperparameters explicitly or use self.args to access the hyperparameters.
         """
-        raise NotImplementedError()
+        torch.nn.init.xavier_uniform_(self.embedding.weight)
+        torch.nn.init.xavier_uniform_(self.fc1.weight)
+        self.fc1.bias.data.fill_(0.01)
+        torch.nn.init.xavier_uniform_(self.fc2.weight)
+        self.fc2.bias.data.fill_(0.01)
+        torch.nn.init.xavier_uniform_(self.fc3.weight)
+        self.fc3.bias.data.fill_(0.01)
 
     def copy_embedding_from_numpy(self):
         """
@@ -72,8 +94,16 @@ class DanModel(BaseModel):
         Pass hyperparameters explicitly or use self.args to access the hyperparameters.
         """
         raise NotImplementedError()
+    
+    def init_embedding_matrix(self):
+        self.embedding_matrix = np.copy(self.embedding.weight.data.numpy())
+        embeddings_index = {}
+        for i, word in self.vocab.id2word.items():
+            embedding_vector = embeddings_index.get(word)
+            if embedding_vector is not None:
+                self.embedding_matrix[i] = embedding_vector
 
-    def forward(self, x):
+    def forward(self, input):
         """
         Compute the unnormalized scores for P(Y|X) before the softmax function.
         E.g., feature: h = f(x)
@@ -84,4 +114,21 @@ class DanModel(BaseModel):
         Return:
             scores: (torch.FloatTensor), [batch_size, ntags]
         """
-        raise NotImplementedError()
+        
+        x = self.embedding(input.sents)
+
+        embed_sum = (x * input.masks.unsqueeze(-1).float()).sum(dim=1)
+        word_len = input.masks.sum(dim=1).unsqueeze(-1).float()
+        x = embed_sum / word_len
+
+        x = self.fc1(x)
+        x = self.bn1(x)
+        x = F.relu(x)
+
+        x = self.fc2(self.drop(x))
+        x = self.bn2(x)
+        x = F.relu(x)
+
+        x = self.fc3(self.drop(x))
+
+        return x
