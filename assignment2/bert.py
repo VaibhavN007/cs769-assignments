@@ -51,19 +51,25 @@ class BertSelfAttention(nn.Module):
     # mask    : (bs, 1, 1, seq_len)
 
     # Attention(Q, K, V) = softmax( Q * K.T / sqrt(d) ) * V
-    kt = torch.transpose(key, -2, -1)                # (bs, num_attention_heads, attention_head_size, seq_len)
+    bs, num_attention_heads, seq_len, attention_head_size = key.shape
+
+    kt = torch.transpose(key, -2, -1)   # (bs, num_attention_heads, attention_head_size, seq_len)
     
-    scores = query @ kt                             # (bs, num_attention_heads, seq_len, seq_len)
-    scores /= math.sqrt(self.attention_head_size)   # (bs, num_attention_heads, seq_len, seq_len)
+    scores = torch.matmul(query, kt)    # (bs, num_attention_heads, seq_len, seq_len)
+    scores = scores / math.sqrt(self.attention_head_size)   # (bs, num_attention_heads, seq_len, seq_len)
+
+    if attention_mask is not None:
+      scores += attention_mask
     
-    probs = torch.softmax(scores, dim=-1)           # (bs, num_attention_heads, seq_len, seq_len)
-    probs = self.dropout(probs)                     # (bs, num_attention_heads, seq_len, seq_len)
+    probs = F.softmax(scores, dim=-1)   # (bs, num_attention_heads, seq_len, seq_len)
+    probs = self.dropout(probs)   # (bs, num_attention_heads, seq_len, seq_len)
     
-    context = probs @ value                         # (bs, num_attention_heads, seq_len, attention_head_size)
+    context = torch.matmul(probs, value)   # (bs, num_attention_heads, seq_len, attention_head_size)
 
     # next, we need to concat multi-heads and recover the original shape [bs, seq_len, num_attention_heads * attention_head_size = hidden_size]
-    bs, _, seq_len, _  = context.shape
-    context = context.view(bs, seq_len, -1)         # (bs, seq_len, hidden_size)
+    # bs, _, seq_len, _  = context.shape
+    # context = context.view(bs, seq_len, -1)   # (bs, seq_len, hidden_size)
+    context = context.permute(0, 2, 1, 3).contiguous().view(bs, seq_len, -1)
     return context
 
   def forward(self, hidden_states, attention_mask):
