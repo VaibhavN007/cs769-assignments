@@ -46,7 +46,7 @@ class BertSentClassifier(torch.nn.Module):
         first_tk = out['pooler_output']
         first_tk = self.dropout(first_tk)
         cls = self.classifier(first_tk)
-        cls = F.softmax(cls, dim=-1)
+        cls = F.log_softmax(cls, dim=-1)
         return cls
 
 # create a custom Dataset Class to be used for the dataloader
@@ -214,6 +214,7 @@ def train(args):
 
             train_loss += loss.item()
             num_batches += 1
+            print('loss ', train_loss, num_batches)
 
         train_loss = train_loss / (num_batches)
 
