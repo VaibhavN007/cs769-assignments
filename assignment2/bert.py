@@ -67,8 +67,6 @@ class BertSelfAttention(nn.Module):
     context = torch.matmul(probs, value)   # (bs, num_attention_heads, seq_len, attention_head_size)
 
     # next, we need to concat multi-heads and recover the original shape [bs, seq_len, num_attention_heads * attention_head_size = hidden_size]
-    # bs, _, seq_len, _  = context.shape
-    # context = context.view(bs, seq_len, -1)   # (bs, seq_len, hidden_size)
     context = context.permute(0, 2, 1, 3).contiguous().view(bs, seq_len, -1)
     return context
 
